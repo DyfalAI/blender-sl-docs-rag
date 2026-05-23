@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GSAP Cartoon Float Playground</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #1d2b4f 0%, #0a1124 60%, #050914 100%);
+      cursor: crosshair;
+      font-family: system-ui, sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    .hint {
+      position: fixed;
+      left: 16px;
+      bottom: 12px;
+      color: rgba(255,255,255,0.8);
+      font-size: 14px;
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="hint">Move mouse to tilt • Click a cartoon for pop + particles</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script>
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+
+    const mouse = { x: innerWidth / 2, y: innerHeight / 2, nx: 0, ny: 0 };
+    const cartoons = [];
+    const particles = [];
+
+    const imageSources = [
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f63a.png',
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f42f.png',
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f981.png',
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f43c.png',
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f431.png',
+      'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f47e.png'
+    ];
+
+    const clickSfx = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
+    clickSfx.preload = 'auto';
+
+    function resize() {
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    function spawnParticles(x, y) {
+      const count = 24;
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 5;
+        particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 2 + Math.random() * 4,
+          life: 1,
+          hue: Math.floor(Math.random() * 360)
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05;
+        p.vx *= 0.99;
+        p.vy *= 0.99;
+        p.radius *= 0.97;
+        p.life -= 0.02;
+
+        if (p.life <= 0 || p.radius < 0.4) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.globalAlpha = Math.max(p.life, 0);
+        ctx.fillStyle = `hsl(${p.hue}, 90%, 65%)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function makeCartoon(img, i, total) {
+      const baseSize = 62 + Math.random() * 36;
+      const c = {
+        img,
+        x: (i + 1) * (canvas.width / (total + 1)),
+        y: 80 + Math.random() * (canvas.height - 160),
+        baseY: 0,
+        size: baseSize,
+        scale: 1,
+        rotation: 0,
+        targetRotation: 0,
+        bobPhase: Math.random() * Math.PI * 2,
+        bobSpeed: 0.01 + Math.random() * 0.02,
+        bobAmplitude: 6 + Math.random() * 14,
+      };
+      c.baseY = c.y;
+
+      gsap.to(c, {
+        x: `+=${(Math.random() > 0.5 ? 1 : -1) * (90 + Math.random() * 120)}`,
+        duration: 3 + Math.random() * 3,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut'
+      });
+
+      gsap.to(c, {
+        size: baseSize * (1.08 + Math.random() * 0.14),
+        duration: 2 + Math.random() * 2,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut'
+      });
+
+      cartoons.push(c);
+    }
+
+    function drawCartoons() {
+      for (const c of cartoons) {
+        c.bobPhase += c.bobSpeed;
+        const bob = Math.sin(c.bobPhase) * c.bobAmplitude;
+        const y = c.baseY + bob;
+
+        c.targetRotation = mouse.nx * 0.22 + mouse.ny * 0.12;
+        c.rotation += (c.targetRotation - c.rotation) * 0.08;
+
+        ctx.save();
+        ctx.translate(c.x, y);
+        ctx.rotate(c.rotation);
+        ctx.scale(c.scale, c.scale);
+
+        const d = c.size;
+        ctx.shadowColor = 'rgba(0,0,0,0.28)';
+        ctx.shadowBlur = 8;
+        ctx.drawImage(c.img, -d / 2, -d / 2, d, d);
+        ctx.restore();
+      }
+    }
+
+    function clickCartoon(mx, my) {
+      for (let i = cartoons.length - 1; i >= 0; i--) {
+        const c = cartoons[i];
+        const half = c.size / 2;
+        if (mx >= c.x - half && mx <= c.x + half && my >= c.baseY - half - 24 && my <= c.baseY + half + 24) {
+          const sfx = clickSfx.cloneNode();
+          sfx.volume = 0.5;
+          sfx.play().catch(() => {});
+
+          gsap.fromTo(c, { scale: 1.25 }, {
+            scale: 1,
+            duration: 0.35,
+            ease: 'back.out(4)'
+          });
+
+          spawnParticles(mx, my);
+          return;
+        }
+      }
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawCartoons();
+      updateParticles();
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      mouse.nx = (mouse.x / canvas.width - 0.5) * 2;
+      mouse.ny = (mouse.y / canvas.height - 0.5) * 2;
+    });
+
+    canvas.addEventListener('click', (e) => {
+      clickCartoon(e.clientX, e.clientY);
+    });
+
+    (async function init() {
+      resize();
+      const images = await Promise.all(imageSources.map(loadImage));
+      images.forEach((img, i) => makeCartoon(img, i, images.length));
+      animate();
+    })();
+  </script>
+</body>
+</html>
